@@ -1,156 +1,214 @@
 // controllers/outageController.js
-const mongoose = require("mongoose");
 const Outage = require("../models/Outage");
 const Area = require("../models/Area");
-const User = require("../models/User");
 const { reverseGeocode, forwardGeocode } = require("../services/geocode");
+const { hasValidCoords, normalizeName } = require("../utils/geo");
 
-// GET /api/outages
-exports.getAllOutages = async (req, res, next) => {
+/**
+ * GET /api/outages (public)
+ * Fetch all outages
+ */
+// inside controllers/outageController.js (replace createOutage)
+exports.createOutage = async (req, res) => {
   try {
-    const items = await Outage.find()
-      .populate("reportedBy", "username email")
-      .populate("areaId", "name city")
-      .sort({ createdAt: -1 });
-    res.json(items);
-  } catch (err) { next(err); }
-};
+    const { area, startTime, endTime, latitude, longitude, note } = req.body;
+    if (!area && (!latitude || !longitude)) {
+      return res.status(400).json({ message: "area or lat/lon required" });
+    }
 
-// POST /api/outages (auth)
-exports.createOutage = async (req, res, next) => {
-  try {
-    const { areaId, areaName, startTime, endTime, latitude, longitude, note } = req.body;
-
-    if (!startTime) return res.status(400).json({ message: "startTime required" });
-
-    let lat = latitude != null ? Number(latitude) : undefined;
-    let lon = longitude != null ? Number(longitude) : undefined;
-    if (Number.isNaN(lat)) lat = undefined;
-    if (Number.isNaN(lon)) lon = undefined;
-
+    // Normalize area for lookup
+    const normalized = area ? area.trim().toLowerCase() : null;
     let areaDoc = null;
-    let finalAreaName = areaName || null;
-    let city = null;
-
-    if (areaId && mongoose.isValidObjectId(areaId)) {
-      areaDoc = await Area.findById(areaId);
-      if (!areaDoc) return res.status(400).json({ message: "areaId not found" });
-      finalAreaName = finalAreaName || areaDoc.name;
-      city = areaDoc.city || city;
-      if (!lat || !lon) {
-        const [ALon, ALat] = areaDoc.location?.coordinates || [];
-        if (ALat != null && ALon != null) { lat = ALat; lon = ALon; }
+    if (normalized) {
+      areaDoc = await Area.findOne({ normalizedName: normalized });
+      if (!areaDoc) {
+        // try geocode then create area
+        let coords = null;
+        try {
+          const geo = await forwardGeocode(`${area}, Karachi`);
+          if (geo) coords = { type: "Point", coordinates: [geo.lon, geo.lat] };
+        } catch(e) {}
+        areaDoc = new Area({
+          name: area,
+          normalizedName: normalized,
+          city: "Karachi",
+          location: coords || { type: "Point", coordinates: [0,0] },
+          locationIqPlaceId: null
+        });
+        await areaDoc.save();
       }
     }
 
-    if ((!lat || !lon) && finalAreaName) {
-      const f = await forwardGeocode(`${finalAreaName}${city ? ", " + city : ""}`);
-      if (f) { lat = f.lat; lon = f.lon; }
+    let lat = latitude, lon = longitude;
+    if ((!lat || !lon) && areaDoc && hasValidCoords(areaDoc.location)) {
+      lon = areaDoc.location.coordinates[0];
+      lat = areaDoc.location.coordinates[1];
     }
 
-    if (!lat || !lon) return res.status(400).json({ message: "valid lat & lng required or provide resolvable area" });
-
-    if (!city) {
-      try { const rev = await reverseGeocode(lat, lon); city = rev?.city || "Karachi"; } catch (_) { city = "Karachi"; }
+    // if still missing -> attempt forward geocode
+    if ((!lat || !lon) && area) {
+      try {
+        const geo = await forwardGeocode(`${area}, Karachi`);
+        if (geo) { lat = geo.lat; lon = geo.lon; }
+      } catch(e) {}
     }
+
+    if (!lat || !lon) return res.status(400).json({ message: "Coordinates required or area not found" });
 
     const outage = new Outage({
-      areaId: areaDoc?._id,
-      areaName: finalAreaName || areaDoc?.name || "Unknown",
-      city,
+      area: area || areaDoc?.name || "Unknown Area",
+      areaId: areaDoc?._id || null,
+      city: areaDoc?.city || "Karachi",
       location: { type: "Point", coordinates: [parseFloat(lon), parseFloat(lat)] },
+      locationIqPlaceId: areaDoc?.locationIqPlaceId || null,
       startTime: new Date(startTime),
       endTime: endTime ? new Date(endTime) : undefined,
-      status: endTime ? "resolved" : "ongoing",
       reportedBy: req.userId,
-      note
+      note,
     });
+
     await outage.save();
-
-    const populated = await Outage.findById(outage._id)
-      .populate("reportedBy", "username email")
-      .populate("areaId", "name city");
-
+    const populated = await outage.populate("reportedBy", "username email");
     res.status(201).json(populated);
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error("createOutage error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+/**
+ * GET /api/outages (public)
+ * Fetch all outages with optional filters: ?page=&limit=&area=&status=
+ */
+exports.getAllOutages = async (req, res) => {
+  try {
+    // pagination
+    const page = Math.max(0, parseInt(req.query.page || '0', 10));
+    const limit = Math.min(200, parseInt(req.query.limit || '100', 10));
+
+    // build filter
+    const filter = {};
+    if (req.query.area) {
+      // case-insensitive partial match
+      filter.area = new RegExp(req.query.area, 'i');
+    }
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+    // optional date range filter: ?from=2025-06-26&to=2025-06-26 (ISO yyyy-mm-dd)
+    if (req.query.from || req.query.to) {
+      filter.startTime = {};
+      if (req.query.from) filter.startTime.$gte = new Date(req.query.from);
+      if (req.query.to) {
+        // make end of day if only date provided
+        const toDate = new Date(req.query.to);
+        toDate.setHours(23,59,59,999);
+        filter.startTime.$lte = toDate;
+      }
+    }
+
+    // query DB
+    const [items, total] = await Promise.all([
+      Outage.find(filter)
+        .populate('reportedBy', 'username email')
+        .populate('areaId', 'name city')
+        .sort({ startTime: -1 })
+        .skip(page * limit)
+        .limit(limit),
+      Outage.countDocuments(filter)
+    ]);
+
+    res.json({ ok: true, total, page, limit, data: items });
+  } catch (err) {
+    console.error('getAllOutages error:', err);
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
 };
 
-// GET /api/outages/today (auth)
-exports.getOutagesForUserArea = async (req, res, next) => {
+
+/**
+ * GET /api/outages/today (auth required)
+ * Fetch today's outages for the user's area
+ */
+exports.getOutagesForUserArea = async (req, res) => {
   try {
-    const user = await User.findById(req.userId).select("areaId");
-    if (!user?.areaId) return res.status(400).json({ message: "User area not set" });
+    const user = req.user;
+    if (!user) return res.status(401).json({ message: "User not found" });
 
-    const area = await Area.findById(user.areaId).select("name");
-    if (!area) return res.status(400).json({ message: "User area not found" });
+    if (!user.areaId) {
+      return res.status(400).json({ message: "User area not set. Please set your area in profile." });
+    }
 
-    const start = new Date(); start.setHours(0,0,0,0);
-    const end   = new Date(); end.setHours(23,59,59,999);
+    const start = new Date(); 
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(); 
+    end.setHours(23, 59, 59, 999);
 
-    const items = await Outage.find({
+    const query = {
+      areaId: user.areaId,
       startTime: { $lt: end },
-      $or: [{ endTime: null }, { endTime: { $gt: start } }],
-      $or: [{ areaId: area._id }, { areaName: area.name }]
-    })
+      $or: [
+        { endTime: { $exists: false } }, 
+        { endTime: { $gt: start } }
+      ]
+    };
+
+    const items = await Outage.find(query)
       .populate("reportedBy", "username email")
       .populate("areaId", "name city")
-      .sort({ startTime: 1 });
+      .limit(200)
+      .sort({ startTime: -1 });
 
     res.json(items);
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error("getOutagesForUserArea error:", err);
+    res.status(500).json({ error: err.message });
+  }
 };
 
-// GET /api/outages/nearby?lat=&lng=&maxDistance=&areaId=&areaName=
-exports.getNearbyOutages = async (req, res, next) => {
+/**
+ * GET /api/outages/nearby?lat=&lng=&maxDistance=5000 (premium)
+ * Fetch outages within a radius
+ */
+exports.getNearbyOutages = async (req, res) => {
   try {
-    let { lat, lng, maxDistance = 5000, areaId, areaName } = req.query;
-
-    // allow using areaId or areaName to resolve center point
-    if ((!lat || !lng) && areaId && mongoose.isValidObjectId(areaId)) {
-      const area = await Area.findById(areaId);
-      const [lon, la] = area?.location?.coordinates || [];
-      if (la != null && lon != null) { lat = la; lng = lon; }
-    }
-    if ((!lat || !lng) && areaName) {
-      const a = await Area.findOne({ name: areaName });
-      const [lon, la] = a?.location?.coordinates || [];
-      if (la != null && lon != null) { lat = la; lng = lon; }
-    }
-
-    lat = Number(lat); lng = Number(lng); maxDistance = Number(maxDistance);
-    if ([lat,lng,maxDistance].some(n => Number.isNaN(n))) {
-      return res.status(400).json({ message: "lat,lng,maxDistance must be numbers or provide a valid areaId/areaName" });
+    const { lat, lng, maxDistance = 5000 } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ message: "lat & lng required" });
     }
 
     const items = await Outage.find({
       location: {
         $near: {
-          $geometry: { type: "Point", coordinates: [lng, lat] },
-          $maxDistance: maxDistance
-        }
-      }
+          $geometry: { type: "Point", coordinates: [parseFloat(lng), parseFloat(lat)] },
+          $maxDistance: parseInt(maxDistance),
+        },
+      },
     })
-      .populate("reportedBy", "username email")
-      .populate("areaId", "name city");
+    .populate("reportedBy", "username email")
+    .populate("areaId", "name city")
+    .limit(100);
 
     res.json(items);
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error("getNearbyOutages error:", err);
+    res.status(500).json({ error: err.message });
+  }
 };
 
-// GET /api/outages/area/:area (public)
-exports.getOutagesByArea = async (req, res, next) => {
+/**
+ * GET /api/outages/area/:area (public)
+ * Fetch outages by area name
+ */
+exports.getOutagesByArea = async (req, res) => {
   try {
-    const areaParam = req.params.area;
-    const items = await Outage.find({
-      $or: [
-        { areaName: { $regex: `^${areaParam}$`, $options: "i" } },
-        { areaName: { $regex: areaParam, $options: "i" } }
-      ]
-    })
+    const areaName = req.params.area;
+    const items = await Outage.find({ area: areaName })
       .populate("reportedBy", "username email")
       .populate("areaId", "name city")
-      .sort({ createdAt: -1 });
-
+      .sort({ startTime: -1 });
     res.json(items);
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error("getOutagesByArea error:", err);
+    res.status(500).json({ error: err.message });
+  }
 };

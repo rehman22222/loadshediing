@@ -2,28 +2,56 @@
 const mongoose = require("mongoose");
 
 const outageSchema = new mongoose.Schema({
-  // either link to Area or store name
-  areaId: { type: mongoose.Schema.Types.ObjectId, ref: "Area" },
-  areaName: { type: String }, // keep for simple queries by name
+  area: { type: String, required: true }, // human-friendly
+  areaId: { type: mongoose.Schema.Types.ObjectId, ref: "Area", required: true, index: true }, // must link to Area
   city: { type: String, default: "Karachi" },
-
-  // geospatial point
   location: {
     type: { type: String, enum: ["Point"], default: "Point" },
-    coordinates: { type: [Number], required: true } // [lng, lat]
+    coordinates: {
+      type: [Number],
+      required: true, // always enforce [lng, lat]
+      validate: {
+        validator: function (val) {
+          return Array.isArray(val) && val.length === 2;
+        },
+        message: "Outage must have valid coordinates [lng, lat]"
+      }
+    }
   },
+  locationIqPlaceId: { type: String, default: null },
 
   startTime: { type: Date, required: true },
-  endTime: { type: Date }, // nullable = still ongoing
+  endTime: { type: Date },
+
   status: { type: String, enum: ["ongoing", "resolved"], default: "ongoing" },
+
   reportedAt: { type: Date, default: Date.now },
-  reportedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
-  note: { type: String }
+  reportedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" }, // user OR null for system imports
+  note: { type: String },
+
+  // 🔑 For schedule imports
+  importDate: { type: Date },
+  importHash: { type: String} // md5 hash of area+time+date
 }, { timestamps: true });
 
+// Spatial index
 outageSchema.index({ location: "2dsphere" });
-outageSchema.index({ startTime: 1, endTime: 1 });
-outageSchema.index({ areaId: 1 });
-outageSchema.index({ areaName: 1 });
+
+// Index for finding duplicates per user reports
+outageSchema.index({ area: 1, startTime: 1, reportedBy: 1 }, { unique: false });
+
+// Unique index on importHash (only one outage per hash)
+outageSchema.index({ importHash: 1 }, { unique: true, sparse: true });
+
+// --- Validation to stop saving broken records ---
+outageSchema.pre("validate", function (next) {
+  if (!this.areaId) {
+    return next(new Error("Outage must be linked to an Area (areaId required)"));
+  }
+  if (!this.location || !Array.isArray(this.location.coordinates) || this.location.coordinates.length !== 2) {
+    return next(new Error("Outage must have valid coordinates [lng, lat]"));
+  }
+  next();
+});
 
 module.exports = mongoose.model("Outage", outageSchema);

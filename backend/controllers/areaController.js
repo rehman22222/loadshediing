@@ -1,42 +1,58 @@
 // controllers/areaController.js
 const Area = require("../models/Area");
 const { forwardGeocode } = require("../services/geocode");
+const { normalizeName } = require("../utils/geo");
 
-exports.getAreas = async (req, res, next) => {
+exports.getAreas = async (req, res) => {
   try {
-    const { q } = req.query;
-    const filter = q ? { name: { $regex: q, $options: "i" } } : {};
-    const items = await Area.find(filter).limit(100).lean();
+    const { city, search } = req.query;
+    const query = {};
+    
+    if (city) query.city = city;
+    if (search) {
+      query.name = { $regex: search, $options: 'i' };
+    }
+    
+    const items = await Area.find(query)
+      .limit(500)
+      .sort({ name: 1 });
     res.json(items);
-  } catch (err) { next(err); }
+  } catch (err) { 
+    res.status(500).json({ error: err.message }); 
+  }
 };
 
-exports.getAreaById = async (req, res, next) => {
+exports.createArea = async (req, res) => {
   try {
-    const area = await Area.findById(req.params.id).lean();
-    if (!area) return res.status(404).json({ message: "Area not found" });
-    res.json(area);
-  } catch (err) { next(err); }
-};
-
-exports.createArea = async (req, res, next) => {
-  try {
-    const { name, city } = req.body;
-    if (!name) return res.status(400).json({ message: "name required" });
-
-    const exists = await Area.findOne({ name });
-    if (exists) return res.status(409).json({ message: "Area already exists" });
-
+    const { name: rawName, city } = req.body;
+    const name = normalizeName(rawName);
+    
+    if (!name) {
+      return res.status(400).json({ error: "Area name is required" });
+    }
+    
     let coords = null;
-    try { coords = await forwardGeocode(name + (city ? ", " + city : "")); } catch(e){ coords = null; }
+    try { 
+      coords = await forwardGeocode(name + (city ? ", " + city : ", Karachi")); 
+    } catch(e) { 
+      console.log("Geocoding failed for", name, ":", e.message);
+      coords = null; 
+    }
+    
     const area = new Area({
       name,
       city: city || "Karachi",
       location: coords ? { type: "Point", coordinates: [coords.lon, coords.lat] } : undefined,
-      locationIqPlaceId: coords?.placeId
+      locationIqPlaceId: coords?.placeId,
+      autoCreated: false
     });
+    
     await area.save();
     res.status(201).json(area);
-  } catch (err) { next(err); }
+  } catch (err) { 
+    if (err.code === 11000) {
+      return res.status(400).json({ error: "Area with this name already exists" });
+    }
+    res.status(400).json({ error: err.message }); 
+  }
 };
-
