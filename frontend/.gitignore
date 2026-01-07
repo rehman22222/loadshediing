@@ -1,10 +1,37 @@
-# Learn more https://docs.github.com/en/get-started/getting-started-with-git/ignoring-files
+# ========================
+# Node.js / Backend ignores
+# ========================
 
 # dependencies
-node_modules/
+/node_modules
 
-# Expo
+# environment variables
+.env
+.env*.local
+
+# logs & dumps
+logs/
+mongodump/
+mongosh/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# temp JSON (local/test only)
+extra_areas.json
+missing_areas.json
+
+# coverage & build
+coverage/
+build/
+dist/
+
+# ========================
+# Expo / React Native ignores
+# ========================
+
 .expo/
+.expo-shared/
 dist/
 web-build/
 expo-env.d.ts
@@ -21,17 +48,41 @@ expo-env.d.ts
 # Metro
 .metro-health-check*
 
-# debug
-npm-debug.*
-yarn-debug.*
-yarn-error.*
+# iOS
+*.xcworkspace
+*.xcodeproj
+Pods/
+
+# Android
+/android
+/ios
+*.apk
+*.aab
+
+# ========================
+# OS / IDE ignores
+# ========================
 
 # macOS
 .DS_Store
-*.pem
 
-# local env files
-.env*.local
+# Windows
+Thumbs.db
+ehthumbs.db
+Desktop.ini
 
-# typescript
+# VSCode / JetBrains
+.vscode/
+.idea/
+
+# ========================
+# Typescript / Build info
+# ========================
+
 *.tsbuildinfo
+
+# ========================
+# Security / Keys
+# ========================
+
+*.pem

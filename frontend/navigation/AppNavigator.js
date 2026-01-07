@@ -1,22 +1,58 @@
-import React from "react";
-import { NavigationContainer } from "@react-navigation/native";
-import { createNativeStackNavigator } from "@react-navigation/native-stack";
-import LoginScreen from "../screens/LoginScreen";
-import RegisterScreen from "../screens/RegisterScreen";
-import ProfileScreen from "../screens/ProfileScreen";
-import OutagesScreen from "../screens/OutagesScreen";
+// File: navigation/AppNavigator.js
+import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import { ActivityIndicator, View } from 'react-native';
+import { AuthContext } from '../context/AuthContext';
+
+
+import LoginScreen from '../screens/LoginScreen';
+import RegisterScreen from '../screens/RegisterScreen';
+import OutagesScreen from '../screens/OutagesScreen';
+import NearbyScreen from '../screens/NearbyScreen';
+import ProfileScreen from '../screens/ProfileScreen';
+import PremiumScreen from '../screens/PremiumScreen';
+
 
 const Stack = createNativeStackNavigator();
+const Tab = createBottomTabNavigator();
+
+
+function MainTabs() {
+return (
+<Tab.Navigator screenOptions={{ headerShown: true }}>
+<Tab.Screen name="Outages" component={OutagesScreen} />
+<Tab.Screen name="Nearby" component={NearbyScreen} />
+<Tab.Screen name="Premium" component={PremiumScreen} />
+<Tab.Screen name="Profile" component={ProfileScreen} />
+</Tab.Navigator>
+);
+}
+
 
 export default function AppNavigator() {
-  return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName="Login">
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Register" component={RegisterScreen} />
-        <Stack.Screen name="Profile" component={ProfileScreen} />
-        <Stack.Screen name="Outages" component={OutagesScreen} />
-      </Stack.Navigator>
-    </NavigationContainer>
-  );
+const { user, loading } = useContext(AuthContext);
+
+
+if (loading) {
+return (
+<View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+<ActivityIndicator size="large" />
+</View>
+);
+}
+
+
+return (
+<NavigationContainer>
+<Stack.Navigator screenOptions={{ headerShown: false }}>
+{user ? (
+<Stack.Screen name="Main" component={MainTabs} />
+) : (
+<>
+<Stack.Screen name="Login" component={LoginScreen} />
+<Stack.Screen name="Register" component={RegisterScreen} />
+</>
+)}
+</Stack.Navigator>
+</NavigationContainer>
+);
 }
