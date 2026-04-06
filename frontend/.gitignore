@@ -1,88 +1,24 @@
-# ========================
-# Node.js / Backend ignores
-# ========================
-
-# dependencies
-/node_modules
-
-# environment variables
-.env
-.env*.local
-
-# logs & dumps
-logs/
-mongodump/
-mongosh/
+# Logs
+logs
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
 
-# temp JSON (local/test only)
-extra_areas.json
-missing_areas.json
+node_modules
+dist
+dist-ssr
+*.local
 
-# coverage & build
-coverage/
-build/
-dist/
-
-# ========================
-# Expo / React Native ignores
-# ========================
-
-.expo/
-.expo-shared/
-dist/
-web-build/
-expo-env.d.ts
-
-# Native
-.kotlin/
-*.orig.*
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-
-# Metro
-.metro-health-check*
-
-# iOS
-*.xcworkspace
-*.xcodeproj
-Pods/
-
-# Android
-/android
-/ios
-*.apk
-*.aab
-
-# ========================
-# OS / IDE ignores
-# ========================
-
-# macOS
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
 .DS_Store
-
-# Windows
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-
-# VSCode / JetBrains
-.vscode/
-.idea/
-
-# ========================
-# Typescript / Build info
-# ========================
-
-*.tsbuildinfo
-
-# ========================
-# Security / Keys
-# ========================
-
-*.pem
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?

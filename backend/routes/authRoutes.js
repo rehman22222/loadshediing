@@ -11,6 +11,16 @@ function signToken(userId) {
   return jwt.sign({ id: userId }, process.env.JWT_SECRET, { expiresIn: "7d" });
 }
 
+function serializeUser(user) {
+  return {
+    id: user._id,
+    username: user.username,
+    email: user.email,
+    role: user.role,
+    areaId: user.areaId || null,
+  };
+}
+
 // REGISTER (areaId optional now)
 router.post("/register", async (req, res) => {
   try {
@@ -32,7 +42,7 @@ router.post("/register", async (req, res) => {
     const token = signToken(user._id);
     return res.status(201).json({
       message: "User registered successfully",
-      user: { id: user._id, username: user.username, email: user.email, areaId: user.areaId || null },
+      user: serializeUser(user),
       token
     });
   } catch (err) {
@@ -55,7 +65,7 @@ router.post("/login", async (req, res) => {
     const token = signToken(user._id);
     return res.json({
       message: "Login successful",
-      user: { id: user._id, username: user.username, email: user.email, areaId: user.areaId || null },
+      user: serializeUser(user),
       token
     });
   } catch (err) {
@@ -65,6 +75,18 @@ router.post("/login", async (req, res) => {
 
 // PROFILE (GET)
 router.get("/profile", auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.userId)
+      .select("-password")
+      .populate("areaId", "name city");
+    if (!user) return res.status(404).json({ message: "User not found" });
+    res.json({ user });
+  } catch (err) {
+    res.status(500).json({ message: "Server error", error: err.message });
+  }
+});
+
+router.get("/me", auth, async (req, res) => {
   try {
     const user = await User.findById(req.userId)
       .select("-password")

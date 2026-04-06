@@ -3,47 +3,90 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
+const compression = require("compression");
 const rateLimit = require("express-rate-limit");
 require("dotenv").config();
 
-// route imports
 const authRoutes = require("./routes/authRoutes");
 const outageRoutes = require("./routes/outageRoutes");
 const areaRoutes = require("./routes/areaRoutes");
 const feedbackRoutes = require("./routes/feedbackRoutes");
 const iapRoutes = require("./routes/iapRoutes");
-
-// middleware
 const errorHandler = require("./middleware/errorHandler");
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = Number(process.env.PORT) || 5000;
+const API_PREFIX = "/api";
 
-// middleware
-app.use(express.json());
-app.use(cors());
+const corsOptions = {
+  origin: process.env.CLIENT_ORIGIN ? process.env.CLIENT_ORIGIN.split(",").map((item) => item.trim()) : true,
+  credentials: true,
+};
+
 app.use(helmet());
-app.use(morgan("dev"));
-app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 1000 }));
+app.use(compression());
+app.use(cors(corsOptions));
+app.use(express.json({ limit: "1mb" }));
 app.use(express.urlencoded({ extended: true }));
+app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
+app.use(
+  rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 1000,
+    standardHeaders: true,
+    legacyHeaders: false,
+  })
+);
 
-// default route
-app.get("/", (req, res) => res.send("Server is running 🚀"));
+app.get("/", (req, res) => {
+  res.json({
+    ok: true,
+    message: "Loadshedding Tracker API is running",
+  });
+});
 
-// mount routes
-app.use("/api/auth", authRoutes);
-app.use("/api/outages", outageRoutes);
-app.use("/api/areas", areaRoutes);
-app.use("/api/feedback", feedbackRoutes);
-app.use("/api/iap", iapRoutes);
+app.get(`${API_PREFIX}/health`, (req, res) => {
+  res.json({
+    ok: true,
+    status: "healthy",
+    timestamp: new Date().toISOString(),
+  });
+});
 
-// error handler (last)
+app.use(`${API_PREFIX}/auth`, authRoutes);
+app.use(`${API_PREFIX}/outages`, outageRoutes);
+app.use(`${API_PREFIX}/areas`, areaRoutes);
+app.use(`${API_PREFIX}/feedback`, feedbackRoutes);
+app.use(`${API_PREFIX}/iap`, iapRoutes);
+
+app.use((req, res) => {
+  res.status(404).json({
+    message: `Route not found: ${req.method} ${req.originalUrl}`,
+  });
+});
+
 app.use(errorHandler);
 
-// connect to MongoDB and start server
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log("✅ MongoDB connected");
-    app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));
-  })
-  .catch(err => console.error("❌ MongoDB connection error:", err));
+async function start() {
+  if (!process.env.MONGO_URI) {
+    throw new Error("MONGO_URI is not set in backend/.env");
+  }
+
+  if (!process.env.JWT_SECRET) {
+    throw new Error("JWT_SECRET is not set in backend/.env");
+  }
+
+  await mongoose.connect(process.env.MONGO_URI, {
+    serverSelectionTimeoutMS: 10000,
+  });
+
+  console.log("MongoDB connected");
+  app.listen(PORT, () => {
+    console.log(`Server running at http://localhost:${PORT}`);
+  });
+}
+
+start().catch((error) => {
+  console.error("Failed to start server:", error.message);
+  process.exit(1);
+});
