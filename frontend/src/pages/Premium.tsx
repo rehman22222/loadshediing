@@ -1,121 +1,206 @@
-import { useAuthStore } from '@/store/authStore';
+import { useMemo, useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import toast from 'react-hot-toast';
+import { Crown, Bell, MapPin, Layers3, CreditCard, ShieldCheck } from 'lucide-react';
+
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Crown, Bell, MapPin, BarChart3, Clock, Shield, Zap } from 'lucide-react';
-import { Navigate } from 'react-router-dom';
+import { Badge } from '@/components/ui/badge';
+import { premiumService } from '@/services/premium.service';
+import { useAuthStore } from '@/store/authStore';
+
+function formatCurrency(amount: number, currency: string) {
+  return new Intl.NumberFormat('en-PK', {
+    style: 'currency',
+    currency,
+    maximumFractionDigits: 0,
+  }).format(amount);
+}
 
 export default function Premium() {
-  const { isPremium } = useAuthStore();
+  const { user, updateUser, isPremium } = useAuthStore();
+  const [selectedMethod, setSelectedMethod] = useState('card_placeholder');
 
-  if (isPremium()) {
-    return <Navigate to="/" replace />;
-  }
+  const { data: catalog } = useQuery({
+    queryKey: ['subscriptions', 'catalog'],
+    queryFn: premiumService.getCatalog,
+  });
+
+  const { data: status } = useQuery({
+    queryKey: ['subscriptions', 'status'],
+    queryFn: premiumService.getStatus,
+    enabled: Boolean(user),
+  });
+
+  const selectedPlan = useMemo(() => catalog?.plans?.[0], [catalog]);
+
+  const checkoutMutation = useMutation({
+    mutationFn: () =>
+      premiumService.checkoutPlaceholder({
+        planId: selectedPlan?.id || 'premium-monthly',
+        paymentMethod: selectedMethod,
+      }),
+    onSuccess: (data) => {
+      updateUser(data.user);
+      toast.success('Premium activated successfully.');
+    },
+    onError: () => {
+      toast.error('Failed to activate premium.');
+    },
+  });
 
   const features = [
     {
-      icon: Bell,
-      title: 'Real-time alerts',
-      description: 'Receive faster alerts when outage schedules change in your saved area.',
-    },
-    {
       icon: MapPin,
-      title: 'Nearby outage lookup',
-      description: 'Check outages near your live location using geospatial search.',
+      title: 'Multiple watched areas',
+      description: 'Monitor your main area plus extra areas for family, office, or other properties.',
     },
     {
-      icon: BarChart3,
-      title: 'Priority data access',
-      description: 'See richer location-aware outage information as the dataset grows.',
+      icon: Bell,
+      title: '15-minute reminders',
+      description: 'Get a browser reminder before the next scheduled outage window starts.',
     },
     {
-      icon: Clock,
-      title: 'Faster updates',
-      description: 'Reports from premium users can be prioritized for review and verification.',
+      icon: Layers3,
+      title: 'Other area monitoring',
+      description: 'Search, compare, and save additional schedule areas beyond the free plan limit.',
     },
     {
-      icon: Shield,
-      title: 'Support the platform',
-      description: 'Help fund PDF processing, geocoding, and ongoing schedule updates.',
+      icon: ShieldCheck,
+      title: 'Priority access',
+      description: 'Enjoy the full premium experience with faster access to premium features as they roll out.',
     },
   ];
 
   return (
     <Layout>
-      <div className="max-w-4xl mx-auto">
-        <div className="text-center mb-12">
-          <div className="inline-flex h-16 w-16 rounded-2xl bg-gradient-primary items-center justify-center shadow-large mb-6 animate-pulse-soft">
-            <Crown className="h-8 w-8 text-white" />
+      <div className="space-y-6">
+        <section className="utility-panel-strong p-6 sm:p-8">
+          <div className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
+            <div>
+              <div className="status-chip border-primary/40 bg-primary/10 text-primary">
+                <Crown className="h-3.5 w-3.5" />
+                Premium Access
+              </div>
+              <h1 className="mt-4 text-3xl font-bold leading-tight sm:text-4xl">
+                Unlock broader area coverage and timely outage reminders.
+              </h1>
+              <p className="mt-3 max-w-3xl text-sm text-muted-foreground sm:text-base">
+                Premium helps you follow more than one area, receive reminders before scheduled outages, and stay ahead
+                of your routine with less effort.
+              </p>
+            </div>
+
+            <div className="border border-border bg-secondary/55 p-5">
+              <p className="data-label">Current access</p>
+              <p className="mt-3 text-2xl font-semibold">{isPremium() ? 'Premium Enabled' : 'Free Plan'}</p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                {status?.activePurchase
+                  ? `Active purchase: ${status.activePurchase.planId || 'premium'}`
+                  : 'No active premium purchase yet.'}
+              </p>
+            </div>
           </div>
-          <h1 className="text-4xl font-bold mb-3">Premium Access</h1>
-          <p className="text-xl text-muted-foreground">
-            Unlock location-aware features built on the outage schedule backend.
-          </p>
-        </div>
+        </section>
 
-        <Card className="shadow-large mb-8">
-          <CardHeader className="text-center pb-8">
-            <div className="flex items-baseline justify-center gap-2 mb-2">
-              <span className="text-5xl font-bold">$9.99</span>
-              <span className="text-muted-foreground">/month</span>
-            </div>
-            <CardDescription className="text-base">
-              Purchase verification exists in the backend. Payment UI can be added next.
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <Button className="w-full bg-gradient-primary hover:opacity-90 h-12 text-lg" disabled>
-              <Crown className="mr-2 h-5 w-5" />
-              Premium checkout coming soon
-            </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              The subscription screen is now aligned with the current backend capabilities.
-            </p>
-          </CardContent>
-        </Card>
-
-        <div className="grid gap-6 md:grid-cols-2 mb-8">
-          {features.map((feature) => (
-            <Card key={feature.title} className="hover:shadow-medium transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex gap-4">
-                  <div className="h-12 w-12 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
-                    <feature.icon className="h-6 w-6 text-primary" />
-                  </div>
-                  <div>
-                    <h3 className="font-semibold mb-1">{feature.title}</h3>
-                    <p className="text-sm text-muted-foreground">{feature.description}</p>
-                  </div>
+        <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+          <Card className="utility-panel">
+            <CardHeader>
+              <CardTitle>Plan</CardTitle>
+              <CardDescription>Choose a plan and activate premium access for your account.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="border border-border bg-secondary/55 p-5">
+                <p className="data-label">{selectedPlan?.name || 'Premium Monthly'}</p>
+                <div className="mt-3 flex items-end gap-2">
+                  <span className="text-5xl font-bold">
+                    {selectedPlan ? formatCurrency(selectedPlan.amount, selectedPlan.currency) : 'PKR 799'}
+                  </span>
+                  <span className="pb-1 text-sm text-muted-foreground">/{selectedPlan?.interval || 'month'}</span>
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+                <p className="mt-3 text-sm text-muted-foreground">{selectedPlan?.description}</p>
+              </div>
 
-        <Card>
-          <CardHeader>
-            <CardTitle>Available now</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between py-2 border-b">
-              <span className="text-muted-foreground">Today&apos;s outages</span>
-              <Zap className="h-5 w-5 text-success" />
-            </div>
-            <div className="flex items-center justify-between py-2 border-b">
-              <span className="text-muted-foreground">Outage reporting</span>
-              <Zap className="h-5 w-5 text-success" />
-            </div>
-            <div className="flex items-center justify-between py-2 border-b">
-              <span className="text-muted-foreground">Nearby outage search</span>
-              <span className="text-sm text-muted-foreground">Premium route ready</span>
-            </div>
-            <div className="flex items-center justify-between py-2">
-              <span className="text-muted-foreground">Purchase verification</span>
-              <span className="text-sm text-muted-foreground">Backend ready</span>
-            </div>
-          </CardContent>
-        </Card>
+              <div className="space-y-3">
+                <LabelledMethods
+                  methods={catalog?.paymentMethods || []}
+                  selectedMethod={selectedMethod}
+                  onSelect={setSelectedMethod}
+                />
+              </div>
+
+              <Button
+                className="w-full"
+                onClick={() => checkoutMutation.mutate()}
+                disabled={checkoutMutation.isPending || !selectedPlan}
+              >
+                <CreditCard className="mr-2 h-4 w-4" />
+                {checkoutMutation.isPending ? 'Processing checkout...' : 'Activate premium'}
+              </Button>
+
+              <p className="text-sm text-muted-foreground">
+                Your premium access is activated directly after checkout so you can start using reminders and extra area
+                tracking right away.
+              </p>
+            </CardContent>
+          </Card>
+
+          <div className="grid gap-4 md:grid-cols-2">
+            {features.map((feature) => (
+              <Card key={feature.title} className="utility-panel">
+                <CardContent className="p-6">
+                  <div className="flex gap-4">
+                    <div className="flex h-12 w-12 items-center justify-center border border-border bg-secondary/55">
+                      <feature.icon className="h-5 w-5 text-primary" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold">{feature.title}</h3>
+                      <p className="mt-2 text-sm text-muted-foreground">{feature.description}</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
       </div>
     </Layout>
+  );
+}
+
+function LabelledMethods({
+  methods,
+  selectedMethod,
+  onSelect,
+}: {
+  methods: Array<{ id: string; label: string; provider: string }>;
+  selectedMethod: string;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      {methods.map((method) => {
+        const selected = method.id === selectedMethod;
+        return (
+          <button
+            key={method.id}
+            type="button"
+            className={`border p-4 text-left transition-colors ${
+              selected ? 'border-primary bg-primary/10' : 'border-border bg-secondary/35'
+            }`}
+            onClick={() => onSelect(method.id)}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="font-semibold">{method.label}</p>
+                <p className="text-xs text-muted-foreground">{method.provider}</p>
+              </div>
+              {selected && <Badge variant="outline">Selected</Badge>}
+            </div>
+          </button>
+        );
+      })}
+    </div>
   );
 }

@@ -6,14 +6,32 @@ export type UserRole = 'free' | 'premium' | 'admin';
 export interface User {
   id: string;
   email: string;
+  phoneNumber: string;
   username: string;
   role: UserRole;
+  emailVerified?: boolean;
+  emailVerifiedAt?: string | null;
   areaId?: string | null;
   area?: {
     _id: string;
     name: string;
     city: string;
   } | null;
+  watchedAreaIds?: string[];
+  watchedAreas?: Array<{
+    _id: string;
+    name: string;
+    city: string;
+  }>;
+  areaSelectedAt?: string | null;
+  lastAreaChangeAt?: string | null;
+  alertPreferences?: {
+    enabled: boolean;
+    minutesBefore: number;
+    browserPermission: 'default' | 'granted' | 'denied';
+  };
+  canManageMultipleAreas?: boolean;
+  freeAreaLocked?: boolean;
   location?: {
     lat: number;
     lng: number;

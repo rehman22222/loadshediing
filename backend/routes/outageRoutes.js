@@ -7,7 +7,7 @@ const router = express.Router();
 
 router.post("/", auth, outageController.createOutage);
 router.get("/", outageController.getAllOutages);
-router.get("/upcoming", outageController.getUpcomingOutages);
+router.get("/upcoming", auth, outageController.getUpcomingOutages);
 router.get("/today", auth, outageController.getOutagesForUserArea);
 router.get("/nearby", auth, premiumOnly, outageController.getNearbyOutages);
 router.get("/city/:city", outageController.getOutagesByCity);

@@ -1,6 +1,11 @@
 const Area = require("../models/Area");
+const Outage = require("../models/Outage");
 const { forwardGeocode } = require("../services/geocode");
 const { normalizeName } = require("../utils/geo");
+
+function comparableName(value) {
+  return normalizeName(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+}
 
 exports.getAreas = async (req, res) => {
   try {
@@ -19,8 +24,80 @@ exports.getAreas = async (req, res) => {
       ];
     }
 
-    const items = await Area.find(query).limit(100).sort({ name: 1 });
+    const areas = await Area.find(query).limit(200).sort({ name: 1 }).lean();
+    const outageCounts = await Outage.aggregate([
+      { $match: { areaId: { $in: areas.map((area) => area._id) } } },
+      { $group: { _id: "$areaId", count: { $sum: 1 } } },
+    ]);
+
+    const countMap = new Map(outageCounts.map((item) => [String(item._id), item.count]));
+    const deduped = new Map();
+
+    for (const area of areas) {
+      const key = `${area.city || "Karachi"}:${comparableName(area.name)}`;
+      const enriched = {
+        ...area,
+        outageCount: countMap.get(String(area._id)) || 0,
+      };
+
+      const current = deduped.get(key);
+      if (
+        !current ||
+        enriched.outageCount > current.outageCount ||
+        (enriched.outageCount === current.outageCount && enriched.name.length < current.name.length)
+      ) {
+        deduped.set(key, enriched);
+      }
+    }
+
+    const items = Array.from(deduped.values()).sort((a, b) => {
+      if (b.outageCount !== a.outageCount) {
+        return b.outageCount - a.outageCount;
+      }
+      return a.name.localeCompare(b.name);
+    });
+
     res.json(items);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.getNearbyAreas = async (req, res) => {
+  try {
+    const { lat, lng, limit = 5, maxDistance = 8000 } = req.query;
+
+    if (lat == null || lng == null) {
+      return res.status(400).json({ error: "lat and lng are required" });
+    }
+
+    const nearbyAreas = await Area.find({
+      location: {
+        $near: {
+          $geometry: {
+            type: "Point",
+            coordinates: [Number.parseFloat(lng), Number.parseFloat(lat)],
+          },
+          $maxDistance: Number.parseInt(maxDistance, 10),
+        },
+      },
+    })
+      .limit(Math.min(Number.parseInt(limit, 10) || 5, 10))
+      .lean();
+
+    const outageCounts = await Outage.aggregate([
+      { $match: { areaId: { $in: nearbyAreas.map((area) => area._id) } } },
+      { $group: { _id: "$areaId", count: { $sum: 1 } } },
+    ]);
+
+    const countMap = new Map(outageCounts.map((item) => [String(item._id), item.count]));
+
+    res.json(
+      nearbyAreas.map((area) => ({
+        ...area,
+        outageCount: countMap.get(String(area._id)) || 0,
+      }))
+    );
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

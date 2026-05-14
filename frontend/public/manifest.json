@@ -1,11 +1,12 @@
 {
   "name": "PowerTrack - Loadshedding Tracker",
   "short_name": "PowerTrack",
-  "description": "Track power outages and loadshedding schedules in real-time",
+  "description": "Track daily load shedding routines, live outage windows, and upcoming schedules in a PWA",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#ffffff",
-  "theme_color": "#1e3a8a",
+  "background_color": "#0e1711",
+  "theme_color": "#0e1711",
   "icons": [
     {
       "src": "/icon-192.png",

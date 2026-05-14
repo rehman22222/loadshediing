@@ -1,7 +1,11 @@
+const { DateTime } = require("luxon");
 const Outage = require("../models/Outage");
 const Area = require("../models/Area");
 const { reverseGeocode, forwardGeocode } = require("../services/geocode");
 const { hasValidCoords, normalizeName } = require("../utils/geo");
+
+const SCHEDULE_TIMEZONE = process.env.SCHEDULE_TIMEZONE || "Asia/Karachi";
+const PDF_SEQUENCE_ROTATE_BEFORE_MINUTES = 6 * 60;
 
 function computeStatus(outage) {
   const now = Date.now();
@@ -33,6 +37,132 @@ function serializeOutage(outageDoc) {
     feeder: outage.feeder || null,
     location: coords.length === 2 ? { lng: coords[0], lat: coords[1] } : null,
   };
+}
+
+function getMinutesSinceMidnight(dateValue) {
+  const dt = DateTime.fromJSDate(new Date(dateValue), { zone: SCHEDULE_TIMEZONE });
+  return dt.hour * 60 + dt.minute;
+}
+
+function buildRoutineKey(outage) {
+  const startMinutes = getMinutesSinceMidnight(outage.startTime);
+  const endMinutes = outage.endTime ? getMinutesSinceMidnight(outage.endTime) : startMinutes;
+  return `${outage.areaId}_${startMinutes}_${endMinutes}`;
+}
+
+function sortByClockTime(items) {
+  return [...items].sort(
+    (a, b) => getMinutesSinceMidnight(a.startTime) - getMinutesSinceMidnight(b.startTime)
+  );
+}
+
+function sortByPdfSequence(items) {
+  const sorted = sortByClockTime(items);
+  const earlyMorning = sorted.filter(
+    (item) => getMinutesSinceMidnight(item.startTime) < PDF_SEQUENCE_ROTATE_BEFORE_MINUTES
+  );
+
+  if (!earlyMorning.length || earlyMorning.length === sorted.length) {
+    return sorted;
+  }
+
+  const regularDay = sorted.filter(
+    (item) => getMinutesSinceMidnight(item.startTime) >= PDF_SEQUENCE_ROTATE_BEFORE_MINUTES
+  );
+
+  return [...regularDay, ...earlyMorning];
+}
+
+function materializeRoutineOutage(template, targetDayOffset = 0) {
+  const baseDay = DateTime.now().setZone(SCHEDULE_TIMEZONE).startOf("day").plus({ days: targetDayOffset });
+  const startTemplate = DateTime.fromJSDate(new Date(template.startTime), { zone: SCHEDULE_TIMEZONE });
+  const endTemplate = template.endTime
+    ? DateTime.fromJSDate(new Date(template.endTime), { zone: SCHEDULE_TIMEZONE })
+    : null;
+
+  let start = baseDay.set({
+    hour: startTemplate.hour,
+    minute: startTemplate.minute,
+    second: startTemplate.second,
+    millisecond: startTemplate.millisecond,
+  });
+
+  let end = endTemplate
+    ? baseDay.set({
+        hour: endTemplate.hour,
+        minute: endTemplate.minute,
+        second: endTemplate.second,
+        millisecond: endTemplate.millisecond,
+      })
+    : null;
+
+  if (end && end < start) {
+    end = end.plus({ days: 1 });
+  }
+
+  return {
+    ...template,
+    _id: `${template._id}-${baseDay.toISODate()}`,
+    startTime: start.toUTC().toISO(),
+    endTime: end ? end.toUTC().toISO() : undefined,
+    routineSourceId: template._id,
+    routineDate: baseDay.toISODate(),
+  };
+}
+
+async function getRoutineTemplatesForArea(areaId) {
+  const items = await Outage.find({ areaId })
+    .populate("reportedBy", "username email")
+    .populate("areaId", "name city")
+    .sort({ startTime: -1, createdAt: -1 })
+    .lean();
+
+  const unique = new Map();
+  for (const item of items) {
+    const key = buildRoutineKey(item);
+    if (!unique.has(key)) {
+      unique.set(key, item);
+    }
+  }
+
+  return sortByClockTime(Array.from(unique.values()));
+}
+
+async function buildRoutineScheduleForArea(areaId, options = {}) {
+  const {
+    includeToday = true,
+    includeTomorrow = false,
+    filterFutureFromNow = false,
+    sortMode = "chronological",
+  } = options;
+
+  const templates = await getRoutineTemplatesForArea(areaId);
+  const now = DateTime.now().setZone(SCHEDULE_TIMEZONE);
+  const instances = [];
+
+  if (includeToday) {
+    instances.push(...templates.map((template) => materializeRoutineOutage(template, 0)));
+  }
+
+  if (includeTomorrow) {
+    instances.push(...templates.map((template) => materializeRoutineOutage(template, 1)));
+  }
+
+  const filtered = filterFutureFromNow
+    ? instances.filter((item) => {
+        const end = item.endTime
+          ? DateTime.fromISO(item.endTime, { zone: "utc" }).setZone(SCHEDULE_TIMEZONE)
+          : DateTime.fromISO(item.startTime, { zone: "utc" }).setZone(SCHEDULE_TIMEZONE);
+        return end >= now;
+      })
+    : instances;
+
+  const ordered =
+    sortMode === "pdf-sequence" && includeToday && !includeTomorrow
+      ? sortByPdfSequence(filtered)
+      : filtered.sort((a, b) => new Date(a.startTime) - new Date(b.startTime));
+
+  return ordered.map(serializeOutage);
 }
 
 async function ensureArea({ area, city, latitude, longitude }) {
@@ -210,20 +340,23 @@ exports.getAllOutages = async (req, res) => {
 
 exports.getUpcomingOutages = async (req, res) => {
   try {
-    const now = new Date();
-    const days = Math.min(30, Number.parseInt(req.query.days || "7", 10));
-    const end = new Date(now);
-    end.setDate(end.getDate() + days);
+    if (!req.user) {
+      return res.status(401).json({ message: "User not found" });
+    }
 
-    const items = await Outage.find({
-      startTime: { $gte: now, $lte: end },
-    })
-      .populate("reportedBy", "username email")
-      .populate("areaId", "name city")
-      .sort({ startTime: 1 })
-      .limit(200);
+    if (!req.user.areaId) {
+      return res.status(400).json({
+        message: "User area not set. Please choose your area from the profile page.",
+      });
+    }
 
-    res.json(items.map(serializeOutage));
+    const items = await buildRoutineScheduleForArea(req.user.areaId, {
+      includeToday: true,
+      includeTomorrow: true,
+      filterFutureFromNow: true,
+    });
+
+    res.json(items);
   } catch (err) {
     console.error("getUpcomingOutages error:", err);
     res.status(500).json({ error: err.message });
@@ -242,23 +375,14 @@ exports.getOutagesForUserArea = async (req, res) => {
       });
     }
 
-    const start = new Date();
-    start.setHours(0, 0, 0, 0);
+    const items = await buildRoutineScheduleForArea(req.user.areaId, {
+      includeToday: true,
+      includeTomorrow: false,
+      filterFutureFromNow: false,
+      sortMode: "pdf-sequence",
+    });
 
-    const end = new Date();
-    end.setHours(23, 59, 59, 999);
-
-    const items = await Outage.find({
-      areaId: req.user.areaId,
-      startTime: { $lte: end },
-      $or: [{ endTime: { $exists: false } }, { endTime: { $gte: start } }],
-    })
-      .populate("reportedBy", "username email")
-      .populate("areaId", "name city")
-      .sort({ startTime: 1 })
-      .limit(200);
-
-    res.json(items.map(serializeOutage));
+    res.json(items);
   } catch (err) {
     console.error("getOutagesForUserArea error:", err);
     res.status(500).json({ error: err.message });

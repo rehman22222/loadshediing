@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: loadshedding-api
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: ALLOWED_ORIGINS
+        value: https://loadshedding-tracker.onrender.com
+
+  - type: static
+    name: loadshedding-tracker
+    buildCommand: cd Frontend && npm install && npm run build
+    staticPublishPath: Frontend/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://loadshedding-api.onrender.com

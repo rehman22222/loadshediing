@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster as HotToaster } from 'react-hot-toast';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
+import { NotificationManager } from '@/components/NotificationManager';
 import { useAuthStore } from '@/store/authStore';
 import Login from './pages/Login';
 import Register from './pages/Register';
@@ -13,6 +14,7 @@ import Upcoming from './pages/Upcoming';
 import Report from './pages/Report';
 import Premium from './pages/Premium';
 import Profile from './pages/Profile';
+import Admin from './pages/Admin';
 import NotFound from './pages/NotFound';
 
 const queryClient = new QueryClient({
@@ -44,6 +46,7 @@ const App = () => {
           }}
         />
         <BrowserRouter>
+          <NotificationManager />
           <Routes>
             <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
             <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <Register />} />
@@ -84,6 +87,14 @@ const App = () => {
               element={
                 <ProtectedRoute>
                   <Premium />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <ProtectedRoute allowedRoles={['admin']}>
+                  <Admin />
                 </ProtectedRoute>
               }
             />

@@ -2,35 +2,95 @@ const axios = require("axios");
 
 const LOCATIONIQ_BASE = "https://us1.locationiq.com/v1";
 const NOMINATIM_BASE = "https://nominatim.openstreetmap.org";
-const LOCATIONIQ_KEY =
-  process.env.LOCATIONIQ_API_KEY || process.env.LOCATIONIQ_KEY || process.env.LOCATIONIQ;
 
 const _cache = new Map();
+let _preferredLocationIqKeyIndex = 0;
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function requestLocationIq(endpoint, params, retries = 2) {
-  if (!LOCATIONIQ_KEY) {
-    throw new Error("LOCATIONIQ_API_KEY not set in env");
+function getLocationIqKeys() {
+  const rawValues = [
+    ...(process.env.LOCATIONIQ_API_KEYS || "")
+      .split(",")
+      .map((item) => item.trim()),
+    process.env.LOCATIONIQ_API_KEY_1,
+    process.env.LOCATIONIQ_API_KEY,
+    process.env.LOCATIONIQ_KEY,
+    process.env.LOCATIONIQ,
+    process.env.LOCATIONIQ_API_KEY_2,
+    process.env.LOCATIONIQ_SECONDARY_API_KEY,
+    process.env.LOCATIONIQ_API_KEY_3,
+  ];
+
+  return [...new Set(rawValues.filter(Boolean))];
+}
+
+function getOrderedLocationIqKeys() {
+  const keys = getLocationIqKeys();
+  if (keys.length <= 1) {
+    return keys.map((key, index) => ({ key, index }));
   }
 
+  const startIndex = Math.min(_preferredLocationIqKeyIndex, keys.length - 1);
+  const ordered = [];
+
+  for (let offset = 0; offset < keys.length; offset += 1) {
+    const index = (startIndex + offset) % keys.length;
+    ordered.push({ key: keys[index], index });
+  }
+
+  return ordered;
+}
+
+function shouldRetryLocationIq(error) {
+  const status = error?.response?.status;
+  return !status || status >= 500 || status === 408;
+}
+
+function formatLocationIqError(error, keyIndex) {
+  const status = error?.response?.status;
+  const detail = error?.response?.data ? JSON.stringify(error.response.data) : error.message;
+  return `key ${keyIndex + 1}${status ? ` (HTTP ${status})` : ""}: ${detail}`;
+}
+
+async function requestLocationIqWithKey(key, keyIndex, endpoint, params, retries = 2) {
   try {
     const res = await axios.get(`${LOCATIONIQ_BASE}${endpoint}`, {
-      params: { key: LOCATIONIQ_KEY, format: "json", ...params },
+      params: { key, format: "json", ...params },
       timeout: 10000,
     });
+
+    _preferredLocationIqKeyIndex = keyIndex;
     return res.data;
   } catch (err) {
-    if (retries > 0) {
+    if (retries > 0 && shouldRetryLocationIq(err)) {
       await sleep(300 + (2 - retries) * 200);
-      return requestLocationIq(endpoint, params, retries - 1);
+      return requestLocationIqWithKey(key, keyIndex, endpoint, params, retries - 1);
     }
 
-    const detail = err?.response?.data ? JSON.stringify(err.response.data) : err.message;
-    throw new Error(detail);
+    throw new Error(formatLocationIqError(err, keyIndex));
   }
+}
+
+async function requestLocationIq(endpoint, params, retries = 2) {
+  const orderedKeys = getOrderedLocationIqKeys();
+  if (!orderedKeys.length) {
+    throw new Error("No LocationIQ API keys configured in env");
+  }
+
+  const failures = [];
+
+  for (const { key, index } of orderedKeys) {
+    try {
+      return await requestLocationIqWithKey(key, index, endpoint, params, retries);
+    } catch (error) {
+      failures.push(error.message);
+    }
+  }
+
+  throw new Error(`LocationIQ request failed for all configured keys: ${failures.join(" | ")}`);
 }
 
 async function requestNominatim(path, params) {
@@ -59,7 +119,7 @@ async function forwardGeocode(query) {
 
   let result = null;
 
-  if (LOCATIONIQ_KEY) {
+  if (getLocationIqKeys().length > 0) {
     const out = await requestLocationIq("/search.php", { q: query, limit: 1 });
     if (Array.isArray(out) && out.length > 0) {
       const top = out[0];
@@ -103,7 +163,7 @@ async function reverseGeocode(lat, lon) {
 
   let result = null;
 
-  if (LOCATIONIQ_KEY) {
+  if (getLocationIqKeys().length > 0) {
     const data = await requestLocationIq("/reverse.php", { lat, lon });
     const addr = data.address || {};
     result = {
