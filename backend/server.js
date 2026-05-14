@@ -94,15 +94,17 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 async function start() {
-  if (!process.env.MONGO_URI) {
-    throw new Error("MONGO_URI is not set in backend/.env");
+  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
+  
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI or MONGO_URI is not set");
   }
 
   if (!process.env.JWT_SECRET) {
-    throw new Error("JWT_SECRET is not set in backend/.env");
+    throw new Error("JWT_SECRET is not set");
   }
 
-  await mongoose.connect(process.env.MONGO_URI, {
+  await mongoose.connect(mongoUri, {
     serverSelectionTimeoutMS: 10000,
   });
 
