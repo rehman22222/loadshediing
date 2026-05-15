@@ -24,7 +24,7 @@ const API_BASE_URL = import.meta.env.DEV
 
 export const api = axios.create({
   baseURL: API_BASE_URL,
-  timeout: 15000,
+  timeout: 60000,
   headers: {
     'Content-Type': 'application/json',
   },
@@ -68,7 +68,7 @@ export function getApiErrorMessage(error: unknown, fallback: string) {
   }
 
   if (error.code === 'ECONNABORTED') {
-    return 'Request timed out. Please check that the backend server is running.';
+    return 'Request timed out. The backend may still be waking up. Please try again in a moment.';
   }
 
   if (error.response?.status === 502 || error.response?.status === 503 || error.response?.status === 504) {
