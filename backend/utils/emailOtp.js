@@ -14,10 +14,13 @@ async function sendVerificationOtpEmail({ to, name, otp }) {
   const smtpUser = process.env.SMTP_USER;
   const smtpPass = String(process.env.SMTP_PASS || "").replace(/\s+/g, "");
   const smtpSecure = String(process.env.SMTP_SECURE || "false").toLowerCase() === "true";
+  const resendApiKey = String(process.env.RESEND_API_KEY || "").trim();
   const fromEmail = process.env.SMTP_FROM_EMAIL || smtpUser || "no-reply@powertrack.local";
+  const resendFromEmail = process.env.RESEND_FROM_EMAIL || fromEmail;
   const fromName = process.env.SMTP_FROM_NAME || "PowerTrack";
 
   const subject = "Your PowerTrack verification code";
+  const text = `Your PowerTrack verification code is ${otp}. It expires in 10 minutes.`;
   const html = `
     <div style="font-family: Arial, sans-serif; color: #111827; line-height: 1.6;">
       <h2 style="margin-bottom: 8px;">Verify your email</h2>
@@ -31,9 +34,38 @@ async function sendVerificationOtpEmail({ to, name, otp }) {
     </div>
   `;
 
+  if (resendApiKey) {
+    const fetch = require("node-fetch");
+    const response = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${resendApiKey}`,
+        "Content-Type": "application/json",
+        "User-Agent": "loadshedding-tracker/1.0",
+      },
+      body: JSON.stringify({
+        from: `"${fromName}" <${resendFromEmail}>`,
+        to: [to],
+        subject,
+        html,
+        text,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorBody = await response.text();
+      throw new Error(`Resend email failed (${response.status}): ${errorBody}`);
+    }
+
+    return {
+      delivered: true,
+      preview: false,
+    };
+  }
+
   if (!smtpHost || !smtpUser || !smtpPass) {
     if (process.env.NODE_ENV === "production") {
-      throw new Error("SMTP is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS.");
+      throw new Error("Email is not configured. Set RESEND_API_KEY or SMTP_HOST, SMTP_USER, and SMTP_PASS.");
     }
 
     console.log(`[DEV OTP] Verification code for ${to}: ${otp}`);
@@ -77,7 +109,7 @@ async function sendVerificationOtpEmail({ to, name, otp }) {
     to,
     subject,
     html,
-    text: `Your PowerTrack verification code is ${otp}. It expires in 10 minutes.`,
+    text,
   });
 
   return {

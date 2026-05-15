@@ -28,6 +28,10 @@ services:
         sync: false
       - key: SMTP_FROM_NAME
         value: PowerTrack
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
 
   - type: static
     name: loadshedding-tracker
