@@ -32,6 +32,10 @@ async function sendVerificationOtpEmail({ to, name, otp }) {
   `;
 
   if (!smtpHost || !smtpUser || !smtpPass) {
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("SMTP is not configured. Set SMTP_HOST, SMTP_USER, and SMTP_PASS.");
+    }
+
     console.log(`[DEV OTP] Verification code for ${to}: ${otp}`);
     return {
       delivered: false,
