@@ -15,7 +15,7 @@ services:
       - key: JWT_SECRET
         sync: false
       - key: ALLOWED_ORIGINS
-        value: https://loadshedding-tracker.vercel.app
+        value: https://loadshediing-tracker.vercel.app,https://loadshedding-tracker.vercel.app
       - key: SMTP_HOST
         value: smtp.gmail.com
       - key: SMTP_PORT

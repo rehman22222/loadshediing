@@ -3,6 +3,10 @@ import { persist } from 'zustand/middleware';
 
 export type UserRole = 'free' | 'premium' | 'admin';
 
+export const AUTH_STORAGE_KEY = 'auth-storage';
+const TOKEN_STORAGE_KEY = 'token';
+const USER_STORAGE_KEY = 'user';
+
 export interface User {
   id: string;
   email: string;
@@ -43,6 +47,8 @@ interface AuthState {
   user: User | null;
   token: string | null;
   isAuthenticated: boolean;
+  hasHydrated: boolean;
+  setHasHydrated: (hasHydrated: boolean) => void;
   setAuth: (user: User, token: string) => void;
   updateUser: (user: Partial<User>) => void;
   logout: () => void;
@@ -51,15 +57,23 @@ interface AuthState {
   isAdmin: () => boolean;
 }
 
+const clearAuthStorage = () => {
+  localStorage.removeItem(TOKEN_STORAGE_KEY);
+  localStorage.removeItem(USER_STORAGE_KEY);
+  localStorage.removeItem(AUTH_STORAGE_KEY);
+};
+
 export const useAuthStore = create<AuthState>()(
   persist(
     (set, get) => ({
       user: null,
       token: null,
       isAuthenticated: false,
+      hasHydrated: false,
+      setHasHydrated: (hasHydrated) => set({ hasHydrated }),
       setAuth: (user, token) => {
-        localStorage.setItem('token', token);
-        localStorage.setItem('user', JSON.stringify(user));
+        localStorage.setItem(TOKEN_STORAGE_KEY, token);
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user));
         set({ user, token, isAuthenticated: true });
       },
       updateUser: (userUpdate) => {
@@ -67,12 +81,11 @@ export const useAuthStore = create<AuthState>()(
         if (!current) return;
 
         const updatedUser = { ...current, ...userUpdate };
-        localStorage.setItem('user', JSON.stringify(updatedUser));
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
         set({ user: updatedUser });
       },
       logout: () => {
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+        clearAuthStorage();
         set({ user: null, token: null, isAuthenticated: false });
       },
       updateLocation: (location) => {
@@ -80,7 +93,7 @@ export const useAuthStore = create<AuthState>()(
         if (!current) return;
 
         const updatedUser = { ...current, location };
-        localStorage.setItem('user', JSON.stringify(updatedUser));
+        localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(updatedUser));
         set({ user: updatedUser });
       },
       isPremium: () => {
@@ -90,7 +103,15 @@ export const useAuthStore = create<AuthState>()(
       isAdmin: () => get().user?.role === 'admin',
     }),
     {
-      name: 'auth-storage',
+      name: AUTH_STORAGE_KEY,
+      partialize: (state) => ({
+        user: state.user,
+        token: state.token,
+        isAuthenticated: state.isAuthenticated,
+      }),
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
+      },
     }
   )
 );

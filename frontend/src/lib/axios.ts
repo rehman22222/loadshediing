@@ -1,5 +1,6 @@
 import axios from 'axios';
 import { isAxiosError } from 'axios';
+import { useAuthStore } from '@/store/authStore';
 
 function normalizeBaseUrl(url: string) {
   const trimmed = url.replace(/\/+$/, '');
@@ -32,7 +33,7 @@ export const api = axios.create({
 
 api.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('token') || useAuthStore.getState().token;
     if (token) {
       config.headers.Authorization = `Bearer ${token}`;
     }
@@ -44,10 +45,15 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('token');
-      localStorage.removeItem('user');
-      window.location.href = '/login';
+    const requestUrl = error.config?.url || '';
+    const isAuthFormRequest =
+      requestUrl.includes('/auth/login') ||
+      requestUrl.includes('/auth/register') ||
+      requestUrl.includes('/auth/verify-email-otp') ||
+      requestUrl.includes('/auth/resend-email-otp');
+
+    if (error.response?.status === 401 && !isAuthFormRequest) {
+      useAuthStore.getState().logout();
     }
     return Promise.reject(error);
   }

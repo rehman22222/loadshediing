@@ -31,11 +31,13 @@ const queryClient = new QueryClient({
 });
 
 const AuthHydrator = () => {
-  const { isAuthenticated, updateUser } = useAuthStore();
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
+  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
+  const updateUser = useAuthStore((state) => state.updateUser);
   const { data } = useQuery({
     queryKey: ['auth', 'profile'],
     queryFn: authService.getMe,
-    enabled: isAuthenticated,
+    enabled: hasHydrated && isAuthenticated,
     retry: false,
     refetchOnWindowFocus: false,
   });
@@ -50,6 +52,7 @@ const AuthHydrator = () => {
 };
 
 const App = () => {
+  const hasHydrated = useAuthStore((state) => state.hasHydrated);
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
 
   return (
@@ -69,61 +72,65 @@ const App = () => {
           }}
         />
         <BrowserRouter>
-          <AuthHydrator />
-          <NotificationManager />
-          <Routes>
-            <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
-            <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <Register />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/upcoming"
-              element={
-                <ProtectedRoute>
-                  <Upcoming />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/report"
-              element={
-                <ProtectedRoute>
-                  <Report />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/profile"
-              element={
-                <ProtectedRoute>
-                  <Profile />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/premium"
-              element={
-                <ProtectedRoute>
-                  <Premium />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin"
-              element={
-                <ProtectedRoute allowedRoles={['admin']}>
-                  <Admin />
-                </ProtectedRoute>
-              }
-            />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+          {hasHydrated && (
+            <>
+              <AuthHydrator />
+              <NotificationManager />
+              <Routes>
+                <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
+                <Route path="/register" element={isAuthenticated ? <Navigate to="/" replace /> : <Register />} />
+                <Route
+                  path="/"
+                  element={
+                    <ProtectedRoute>
+                      <Dashboard />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/upcoming"
+                  element={
+                    <ProtectedRoute>
+                      <Upcoming />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/report"
+                  element={
+                    <ProtectedRoute>
+                      <Report />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/profile"
+                  element={
+                    <ProtectedRoute>
+                      <Profile />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/premium"
+                  element={
+                    <ProtectedRoute>
+                      <Premium />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/admin"
+                  element={
+                    <ProtectedRoute allowedRoles={['admin']}>
+                      <Admin />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route path="*" element={<NotFound />} />
+              </Routes>
+            </>
+          )}
         </BrowserRouter>
       </TooltipProvider>
     </QueryClientProvider>
