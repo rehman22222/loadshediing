@@ -3,6 +3,7 @@ const Outage = require("../models/Outage");
 const Area = require("../models/Area");
 const { reverseGeocode, forwardGeocode } = require("../services/geocode");
 const { hasValidCoords, normalizeName } = require("../utils/geo");
+const { compactKey, normalizeSearchText, rankAreasBySearch } = require("../utils/fuzzyAreaSearch");
 
 const SCHEDULE_TIMEZONE = process.env.SCHEDULE_TIMEZONE || "Asia/Karachi";
 const PDF_SEQUENCE_ROTATE_BEFORE_MINUTES = 6 * 60;
@@ -48,6 +49,10 @@ function buildRoutineKey(outage) {
   const startMinutes = getMinutesSinceMidnight(outage.startTime);
   const endMinutes = outage.endTime ? getMinutesSinceMidnight(outage.endTime) : startMinutes;
   return `${outage.areaId}_${startMinutes}_${endMinutes}`;
+}
+
+function comparableAreaKey(area) {
+  return `${area.city || "Karachi"}:${compactKey(area.name)}`;
 }
 
 function sortByClockTime(items) {
@@ -415,6 +420,73 @@ exports.getNearbyOutages = async (req, res) => {
     res.json(items.map(serializeOutage));
   } catch (err) {
     console.error("getNearbyOutages error:", err);
+    res.status(500).json({ error: err.message });
+  }
+};
+
+exports.searchOutagesByArea = async (req, res) => {
+  try {
+    const term = normalizeSearchText(req.query.q || req.query.search || "");
+    if (!term) {
+      return res.status(400).json({ message: "q is required" });
+    }
+
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit || "6", 10) || 6, 1), 10);
+    const areaPool = await Area.find(req.query.city ? { city: req.query.city } : {})
+      .sort({ name: 1 })
+      .lean();
+    const rankedAreas = rankAreasBySearch(areaPool, term).slice(0, Math.max(limit * 4, limit));
+    const areaIds = rankedAreas.map((item) => item.area._id);
+    const outageCounts = await Outage.aggregate([
+      { $match: { areaId: { $in: areaIds } } },
+      { $group: { _id: "$areaId", count: { $sum: 1 } } },
+    ]);
+    const countMap = new Map(outageCounts.map((item) => [String(item._id), item.count]));
+    const deduped = new Map();
+
+    for (const item of rankedAreas) {
+      const enriched = {
+        ...item.area,
+        matchScore: item.matchScore,
+        outageCount: countMap.get(String(item.area._id)) || 0,
+      };
+      const key = comparableAreaKey(enriched);
+      const current = deduped.get(key);
+
+      if (
+        !current ||
+        enriched.matchScore > current.matchScore ||
+        enriched.outageCount > current.outageCount ||
+        (enriched.outageCount === current.outageCount && enriched.name.length < current.name.length)
+      ) {
+        deduped.set(key, enriched);
+      }
+    }
+
+    const matches = Array.from(deduped.values())
+      .sort((a, b) => b.matchScore - a.matchScore || b.outageCount - a.outageCount || a.name.localeCompare(b.name))
+      .slice(0, limit);
+
+    const data = [];
+    for (const area of matches) {
+      const outages = await buildRoutineScheduleForArea(area._id, {
+        includeToday: true,
+        includeTomorrow: false,
+        filterFutureFromNow: false,
+        sortMode: "pdf-sequence",
+      });
+
+      data.push({ area, outages });
+    }
+
+    res.json({
+      ok: true,
+      query: term,
+      total: data.length,
+      data,
+    });
+  } catch (err) {
+    console.error("searchOutagesByArea error:", err);
     res.status(500).json({ error: err.message });
   }
 };

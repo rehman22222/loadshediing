@@ -14,6 +14,7 @@ const Outage = require("../models/Outage");
 const User = require("../models/User");
 const { forwardGeocode } = require("../services/geocode");
 const { normalizeName } = require("../utils/geo");
+const { connectMongoose, getMongoUri } = require("../utils/dbConnection");
 
 const SCHEDULE_TIMEZONE = process.env.SCHEDULE_TIMEZONE || "Asia/Karachi";
 
@@ -366,8 +367,8 @@ async function ensureCanonicalArea(areaName, canonicalMap) {
 }
 
 async function main() {
-  if (!process.env.MONGO_URI) {
-    throw new Error("MONGO_URI is required in backend/.env");
+  if (!getMongoUri()) {
+    throw new Error("MONGODB_URI or MONGO_URI is required in backend/.env");
   }
 
   const pdfPath = path.resolve(argv.file);
@@ -408,7 +409,8 @@ async function main() {
     return;
   }
 
-  await mongoose.connect(process.env.MONGO_URI);
+  await connectMongoose();
+  console.log(`Connected to DB: ${mongoose.connection.db.databaseName}`);
   const systemUser = await ensureSystemUser();
   const canonicalMap = await buildCanonicalAreaMap();
 

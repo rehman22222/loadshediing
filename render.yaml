@@ -10,6 +10,8 @@ services:
         value: production
       - key: MONGODB_URI
         sync: false
+      - key: DB_NAME
+        value: loadsheddingDB
       - key: JWT_SECRET
         sync: false
       - key: ALLOWED_ORIGINS
@@ -35,8 +37,8 @@ services:
 
   - type: static
     name: loadshedding-tracker
-    buildCommand: cd Frontend && npm install && npm run build
-    staticPublishPath: Frontend/dist
+    buildCommand: cd frontend && npm install && npm run build
+    staticPublishPath: frontend/dist
     envVars:
       - key: VITE_API_URL
-        value: https://loadshedding-api.onrender.com
+        value: https://loadshedding-api-krv9.onrender.com

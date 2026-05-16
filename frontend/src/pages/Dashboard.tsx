@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import { Link } from 'react-router-dom';
@@ -49,6 +48,7 @@ function getStatusClasses(status: 'scheduled' | 'ongoing' | 'completed') {
 export default function Dashboard() {
   const { user, isPremium } = useAuthStore();
   const { requestLocation, loading: locationLoading } = useGeolocation();
+  const hasSelectedArea = Boolean(user?.areaId || user?.area?._id);
 
   const {
     data: todayOutages,
@@ -56,26 +56,26 @@ export default function Dashboard() {
     refetch,
     error: todayError,
   } = useQuery({
-    queryKey: ['outages', 'today'],
+    queryKey: ['outages', 'today', user?.areaId || user?.area?._id || 'none'],
     queryFn: outagesService.getTodayOutages,
+    enabled: hasSelectedArea,
     retry: false,
+    refetchOnWindowFocus: false,
   });
 
   const { data: nearbyOutages, refetch: refetchNearby } = useQuery({
     queryKey: ['outages', 'nearby', user?.location?.lat, user?.location?.lng],
     queryFn: () => outagesService.getNearbyOutages(user!.location!.lat, user!.location!.lng),
     enabled: Boolean(user?.location && isPremium()),
+    refetchOnWindowFocus: false,
   });
 
-  useEffect(() => {
-    if (!user?.location) {
-      void requestLocation();
-    }
-    // We only auto-request once on initial load.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   const handleRefresh = async () => {
+    if (!hasSelectedArea) {
+      toast.error('Choose your area from profile first.');
+      return;
+    }
+
     await refetch();
     if (user?.location && isPremium()) {
       await refetchNearby();
@@ -87,7 +87,7 @@ export default function Dashboard() {
   const scheduledOutages = todayOutages?.filter((outage) => outage.status === 'scheduled') || [];
   const nextScheduled = scheduledOutages[0];
   const liveOutage = ongoingOutages[0];
-  const missingArea = isAxiosError(todayError) && todayError.response?.status === 400;
+  const missingArea = !hasSelectedArea || (isAxiosError(todayError) && todayError.response?.status === 400);
   const todayLabel = KARACHI_DATE_FORMATTER.format(new Date());
 
   return (
@@ -209,7 +209,11 @@ export default function Dashboard() {
 
                 {!todayOutages?.length && !isLoading && (
                   <div className="border border-dashed border-border bg-secondary/40 p-4 sm:p-5">
-                    <p className="text-sm text-muted-foreground">No routine timings are currently available.</p>
+                    <p className="text-sm text-muted-foreground">
+                      {hasSelectedArea
+                        ? 'No routine timings are currently available.'
+                        : 'Choose an area from profile to load routine timings.'}
+                    </p>
                   </div>
                 )}
               </div>
@@ -266,7 +270,7 @@ export default function Dashboard() {
             </div>
 
             <div className="mt-8">
-              {isLoading ? (
+              {hasSelectedArea && isLoading ? (
                 <div className="grid gap-4 xl:grid-cols-2">
                   {[1, 2, 3, 4].map((item) => (
                     <Card key={item} className="utility-panel">
@@ -291,7 +295,9 @@ export default function Dashboard() {
                     <Zap className="mx-auto mb-4 h-12 w-12 text-muted-foreground opacity-50" />
                     <h3 className="text-lg font-semibold">No routine timings found</h3>
                     <p className="mt-2 text-sm text-muted-foreground">
-                      No outage timing windows are currently available for your selected area.
+                      {hasSelectedArea
+                        ? 'No outage timing windows are currently available for your selected area.'
+                        : 'Select your main area in profile so the dashboard can load your schedule.'}
                     </p>
                   </CardContent>
                 </Card>

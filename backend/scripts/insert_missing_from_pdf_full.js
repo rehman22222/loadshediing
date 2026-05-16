@@ -10,8 +10,9 @@ const stringSimilarity = require('string-similarity');
 const fetch = require('node-fetch');
 const crypto = require('crypto');
 const readline = require('readline');
+const { getMongoDatabaseName } = require('../utils/dbConnection');
 
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 const LOCATIONIQ_KEY = process.env.LOCATIONIQ_KEY;
 const NOMINATIM_EMAIL = process.env.NOMINATIM_EMAIL || 'you@example.com';
 const PDF_PATH = process.env.PDF_PATH || 'C:/Users/Zubair Computer/Downloads/Documents/Load-Shed-Schedule-26-June-2025.pdf';
@@ -153,7 +154,7 @@ async function geocodeBest(area, areasCollectionCache){
   console.log('PDF path:', PDF_PATH);
   const client = new MongoClient(MONGO_URI, { maxPoolSize: 4 });
   await client.connect();
-  const db = client.db();
+  const db = client.db(getMongoDatabaseName(MONGO_URI));
   const outagesCol = db.collection('outages');
   const areasCol = db.collection('areas');
 

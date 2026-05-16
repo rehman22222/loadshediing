@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from 'react-router-dom';
 import { outagesService } from '@/services/outages.service';
+import { useAuthStore } from '@/store/authStore';
 import { Layout } from '@/components/Layout';
 import { OutageCard } from '@/components/OutageCard';
 import { Button } from '@/components/ui/button';
@@ -9,12 +11,22 @@ import { Calendar, Clock3, RefreshCw, Zap } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 export default function Upcoming() {
+  const { user } = useAuthStore();
+  const hasSelectedArea = Boolean(user?.areaId || user?.area?._id);
   const { data: upcomingOutages, isLoading, refetch } = useQuery({
-    queryKey: ['outages', 'upcoming'],
+    queryKey: ['outages', 'upcoming', user?.areaId || user?.area?._id || 'none'],
     queryFn: outagesService.getUpcomingOutages,
+    enabled: hasSelectedArea,
+    retry: false,
+    refetchOnWindowFocus: false,
   });
 
   const handleRefresh = async () => {
+    if (!hasSelectedArea) {
+      toast.error('Choose your area from profile first.');
+      return;
+    }
+
     await refetch();
     toast.success('Upcoming routine refreshed');
   };
@@ -51,7 +63,7 @@ export default function Upcoming() {
           </div>
         </section>
 
-        {isLoading ? (
+        {hasSelectedArea && isLoading ? (
           <div className="grid gap-4 md:grid-cols-2">
             {[1, 2, 3, 4].map((i) => (
               <Card key={i} className="utility-panel">
@@ -76,12 +88,20 @@ export default function Upcoming() {
               <Zap className="h-12 w-12 text-muted-foreground mx-auto mb-4 opacity-50" />
               <h3 className="font-semibold text-lg mb-2">No upcoming outages</h3>
               <p className="text-muted-foreground">
-                No remaining routine outages were found for today or tomorrow.
+                {hasSelectedArea
+                  ? 'No remaining routine outages were found for today or tomorrow.'
+                  : 'Choose your area in profile to see upcoming routine windows.'}
               </p>
-              <div className="mt-4 inline-flex items-center gap-2 text-sm text-muted-foreground">
-                <Clock3 className="h-4 w-4" />
-                Refresh later to check the next computed routine window.
-              </div>
+              {hasSelectedArea ? (
+                <div className="mt-4 inline-flex items-center gap-2 text-sm text-muted-foreground">
+                  <Clock3 className="h-4 w-4" />
+                  Refresh later to check the next computed routine window.
+                </div>
+              ) : (
+                <Link to="/profile">
+                  <Button className="mt-4">Open Profile</Button>
+                </Link>
+              )}
             </CardContent>
           </Card>
         )}

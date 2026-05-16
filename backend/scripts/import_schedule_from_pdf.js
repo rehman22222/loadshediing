@@ -21,6 +21,7 @@ const Outage = require("../models/Outage");
 const Area = require("../models/Area");
 const User = require("../models/User");
 const { forwardGeocode } = require("../services/geocode");
+const { connectMongoose } = require("../utils/dbConnection");
 
 const argv = minimist(process.argv.slice(2), {
   string: ["file", "date"],
@@ -165,8 +166,8 @@ function parseMergedLinesToEntries(mergedLines) {
       process.exit(1);
     }
 
-    await mongoose.connect(process.env.MONGO_URI);
-    console.log("✅ Connected to MongoDB");
+    await connectMongoose();
+    console.log(`✅ Connected to MongoDB: ${mongoose.connection.db.databaseName}`);
 
     const systemUser = await ensureSystemUser();
 

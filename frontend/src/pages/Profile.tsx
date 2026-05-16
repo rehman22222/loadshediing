@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { isAxiosError } from 'axios';
 import toast from 'react-hot-toast';
-import { Bell, Crown, LocateFixed, Lock, MapPin, Sparkles } from 'lucide-react';
+import { Bell, Clock3, Crown, LocateFixed, Lock, MapPin, Sparkles } from 'lucide-react';
 
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,7 @@ import { Switch } from '@/components/ui/switch';
 import { useGeolocation } from '@/hooks/useGeolocation';
 import { areasService } from '@/services/areas.service';
 import { authService } from '@/services/auth.service';
+import { outagesService } from '@/services/outages.service';
 import { useAuthStore } from '@/store/authStore';
 
 function getApiError(error: unknown, fallback: string) {
@@ -23,11 +24,26 @@ function getApiError(error: unknown, fallback: string) {
   return fallback;
 }
 
+const KARACHI_TIME_FORMATTER = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'Asia/Karachi',
+  hour: '2-digit',
+  minute: '2-digit',
+  hour12: true,
+});
+
+function formatRoutineRange(startTime: string, endTime?: string) {
+  const start = KARACHI_TIME_FORMATTER.format(new Date(startTime)).toLowerCase();
+  if (!endTime) return `${start} onward`;
+  const end = KARACHI_TIME_FORMATTER.format(new Date(endTime)).toLowerCase();
+  return `${start} - ${end}`;
+}
+
 export default function Profile() {
   const { user, updateUser, isPremium } = useAuthStore();
   const { requestLocation, loading: locationLoading } = useGeolocation();
   const [search, setSearch] = useState('');
   const [selectedAreaId, setSelectedAreaId] = useState(user?.areaId || '');
+  const searchTerm = search.trim();
 
   const isPremiumUser = isPremium();
   const currentPermission =
@@ -45,14 +61,22 @@ export default function Profile() {
     enabled: Boolean(user?.location?.lat && user?.location?.lng),
   });
 
+  const outageSearchQuery = useQuery({
+    queryKey: ['outages', 'area-search', searchTerm],
+    queryFn: () => outagesService.searchByArea(searchTerm),
+    enabled: searchTerm.length >= 2,
+    staleTime: 30_000,
+  });
+
   const selectedArea = useMemo(() => {
     return (
       areas.find((area) => area._id === selectedAreaId) ||
+      outageSearchQuery.data?.find((result) => result.area._id === selectedAreaId)?.area ||
       nearbyAreasQuery.data?.find((area) => area._id === selectedAreaId) ||
       user?.area ||
       null
     );
-  }, [areas, nearbyAreasQuery.data, selectedAreaId, user?.area]);
+  }, [areas, outageSearchQuery.data, nearbyAreasQuery.data, selectedAreaId, user?.area]);
 
   const watchAreas = user?.watchedAreas || [];
   const freeAreaLocked = Boolean(user?.freeAreaLocked && user?.areaId && selectedAreaId && selectedAreaId !== user.areaId);
@@ -148,6 +172,7 @@ export default function Profile() {
   };
 
   const results = areas;
+  const outageSearchResults = outageSearchQuery.data || [];
 
   return (
     <Layout>
@@ -334,6 +359,81 @@ export default function Profile() {
                   </div>
                 )}
               </div>
+
+              {searchTerm.length >= 2 && (
+                <div className="border border-border bg-secondary/55 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <p className="data-label">Matching outage schedules</p>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {outageSearchQuery.isLoading
+                          ? 'Searching routine windows...'
+                          : `${outageSearchResults.length} area match${outageSearchResults.length === 1 ? '' : 'es'}`}
+                      </p>
+                    </div>
+                    <Clock3 className="h-4 w-4 text-primary" />
+                  </div>
+
+                  <div className="mt-4 space-y-3">
+                    {outageSearchQuery.isLoading ? (
+                      <div className="border border-border bg-secondary/35 p-4 text-sm text-muted-foreground">
+                        Loading outage timings...
+                      </div>
+                    ) : outageSearchQuery.error ? (
+                      <div className="border border-destructive/40 bg-destructive/10 p-4 text-sm text-destructive">
+                        {getApiError(outageSearchQuery.error, 'Unable to load outage timings.')}
+                      </div>
+                    ) : outageSearchResults.length > 0 ? (
+                      outageSearchResults.map((result) => {
+                        const isSelected = selectedAreaId === result.area._id;
+
+                        return (
+                          <div
+                            key={result.area._id}
+                            className={`border p-4 ${isSelected ? 'border-primary bg-primary/10' : 'border-border bg-secondary/35'}`}
+                          >
+                            <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                              <div>
+                                <p className="font-semibold">{result.area.name}</p>
+                                <p className="text-sm text-muted-foreground">
+                                  {result.area.city} | {result.outages.length || result.area.outageCount || 0} routine slots
+                                </p>
+                              </div>
+                              <Button variant="outline" onClick={() => setSelectedAreaId(result.area._id)}>
+                                Select
+                              </Button>
+                            </div>
+
+                            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                              {result.outages.length > 0 ? (
+                                result.outages.map((outage, index) => (
+                                  <div
+                                    key={outage._id}
+                                    className="border border-border bg-card px-3 py-2 text-sm font-semibold"
+                                  >
+                                    <span className="mr-2 text-[11px] uppercase tracking-[0.2em] text-muted-foreground">
+                                      #{index + 1}
+                                    </span>
+                                    {formatRoutineRange(outage.startTime, outage.endTime)}
+                                  </div>
+                                ))
+                              ) : (
+                                <div className="border border-dashed border-border bg-secondary/35 p-3 text-sm text-muted-foreground sm:col-span-2">
+                                  No outage timings are saved for this area yet.
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="border border-dashed border-border bg-secondary/35 p-4 text-sm text-muted-foreground">
+                        No outage schedule matches found.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
 
               <div className="border border-border bg-secondary/55 p-4">
                 <p className="data-label">Selected primary area</p>

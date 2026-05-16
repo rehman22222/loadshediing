@@ -10,6 +10,7 @@ const mongoose = require("mongoose");
 const minimist = require("minimist");
 const fetch = require("node-fetch");
 const Area = require("../models/Area");
+const { connectMongoose } = require("../utils/dbConnection");
 
 const argv = minimist(process.argv.slice(2), {
   number: ["limit"],
@@ -62,8 +63,8 @@ async function geocodeNominatim(areaName) {
 
 (async function main() {
   try {
-    await mongoose.connect(process.env.MONGO_URI);
-    console.log("✅ Connected to MongoDB");
+    await connectMongoose();
+    console.log(`✅ Connected to MongoDB: ${mongoose.connection.db.databaseName}`);
 
     const zeroAreas = await Area.find({
       $or: [

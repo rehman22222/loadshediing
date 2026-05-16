@@ -3,6 +3,7 @@ require("dotenv").config();
 const fs = require("fs");
 const path = require("path");
 const mongoose = require("mongoose");
+const { connectMongoose, getMongoUri } = require("../utils/dbConnection");
 
 const DEFAULT_COLLECTIONS = ["areas", "outages", "users", "feedbacks", "purchases"];
 
@@ -11,15 +12,15 @@ function timestamp() {
 }
 
 async function main() {
-  if (!process.env.MONGO_URI) {
-    throw new Error("MONGO_URI is required in backend/.env");
+  if (!getMongoUri()) {
+    throw new Error("MONGODB_URI or MONGO_URI is required in backend/.env");
   }
 
   const backupRoot = path.join(__dirname, "..", "backups");
   const backupDir = path.join(backupRoot, `backup-${timestamp()}`);
   fs.mkdirSync(backupDir, { recursive: true });
 
-  await mongoose.connect(process.env.MONGO_URI);
+  await connectMongoose();
   const db = mongoose.connection.db;
 
   const manifest = {

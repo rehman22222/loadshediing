@@ -2,29 +2,28 @@ const Area = require("../models/Area");
 const Outage = require("../models/Outage");
 const { forwardGeocode } = require("../services/geocode");
 const { normalizeName } = require("../utils/geo");
+const { compactKey, normalizeSearchText, rankAreasBySearch } = require("../utils/fuzzyAreaSearch");
 
 function comparableName(value) {
-  return normalizeName(value).toLowerCase().replace(/[^a-z0-9]/g, "");
+  return compactKey(value);
 }
 
 exports.getAreas = async (req, res) => {
   try {
     const { city, search, q } = req.query;
-    const term = search || q;
+    const term = normalizeSearchText(search || q || "");
     const query = {};
 
     if (city) {
       query.city = city;
     }
 
-    if (term) {
-      query.$or = [
-        { name: { $regex: term, $options: "i" } },
-        { normalizedName: { $regex: normalizeName(term).toLowerCase(), $options: "i" } },
-      ];
-    }
-
-    const areas = await Area.find(query).limit(200).sort({ name: 1 }).lean();
+    const allAreas = await Area.find(query).sort({ name: 1 }).lean();
+    const rankedAreas = term
+      ? rankAreasBySearch(allAreas, term).slice(0, 200)
+      : allAreas.slice(0, 200).map((area) => ({ area, matchScore: 1 }));
+    const areas = rankedAreas.map((item) => item.area);
+    const scoreMap = new Map(rankedAreas.map((item) => [String(item.area._id), item.matchScore]));
     const outageCounts = await Outage.aggregate([
       { $match: { areaId: { $in: areas.map((area) => area._id) } } },
       { $group: { _id: "$areaId", count: { $sum: 1 } } },
@@ -38,11 +37,13 @@ exports.getAreas = async (req, res) => {
       const enriched = {
         ...area,
         outageCount: countMap.get(String(area._id)) || 0,
+        matchScore: scoreMap.get(String(area._id)) || 0,
       };
 
       const current = deduped.get(key);
       if (
         !current ||
+        enriched.matchScore > current.matchScore ||
         enriched.outageCount > current.outageCount ||
         (enriched.outageCount === current.outageCount && enriched.name.length < current.name.length)
       ) {
@@ -51,6 +52,9 @@ exports.getAreas = async (req, res) => {
     }
 
     const items = Array.from(deduped.values()).sort((a, b) => {
+      if (term && b.matchScore !== a.matchScore) {
+        return b.matchScore - a.matchScore;
+      }
       if (b.outageCount !== a.outageCount) {
         return b.outageCount - a.outageCount;
       }

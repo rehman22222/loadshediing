@@ -10,6 +10,7 @@ router.get("/", outageController.getAllOutages);
 router.get("/upcoming", auth, outageController.getUpcomingOutages);
 router.get("/today", auth, outageController.getOutagesForUserArea);
 router.get("/nearby", auth, premiumOnly, outageController.getNearbyOutages);
+router.get("/search", outageController.searchOutagesByArea);
 router.get("/city/:city", outageController.getOutagesByCity);
 router.get("/area/:area", outageController.getOutagesByArea);
 

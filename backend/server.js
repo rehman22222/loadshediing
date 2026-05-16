@@ -15,6 +15,7 @@ const adminRoutes = require("./routes/adminRoutes");
 const subscriptionRoutes = require("./routes/subscriptionRoutes");
 const errorHandler = require("./middleware/errorHandler");
 const { ensureAdminAccount } = require("./utils/bootstrapAdmin");
+const { connectMongoose } = require("./utils/dbConnection");
 
 const app = express();
 const PORT = Number(process.env.PORT) || 5000;
@@ -94,21 +95,15 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 async function start() {
-  const mongoUri = process.env.MONGODB_URI || process.env.MONGO_URI;
-  
-  if (!mongoUri) {
-    throw new Error("MONGODB_URI or MONGO_URI is not set");
-  }
-
   if (!process.env.JWT_SECRET) {
     throw new Error("JWT_SECRET is not set");
   }
 
-  await mongoose.connect(mongoUri, {
+  await connectMongoose({
     serverSelectionTimeoutMS: 10000,
   });
 
-  console.log("MongoDB connected");
+  console.log(`MongoDB connected: ${mongoose.connection.db.databaseName}`);
   const adminInfo = await ensureAdminAccount();
   console.log(`Admin account ready: ${adminInfo.email}`);
   app.listen(PORT, () => {

@@ -4,10 +4,11 @@ const pdfParse = require("pdf-parse");
 const dotenv = require("dotenv");
 const { MongoClient } = require("mongodb");
 const stringSimilarity = require("string-similarity");
+const { getMongoDatabaseName } = require("../utils/dbConnection");
 
 dotenv.config();
 
-const MONGO_URI = process.env.MONGO_URI;
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
 const PDF_PATH = "C:/Users/Zubair Computer/Downloads/Documents/Load-Shed-Schedule-26-June-2025.pdf";
 
 // Helper: clean PDF lines
@@ -35,7 +36,7 @@ async function extractAreasFromPDF() {
 async function runComparison() {
   const client = new MongoClient(MONGO_URI);
   await client.connect();
-  const db = client.db();
+  const db = client.db(getMongoDatabaseName(MONGO_URI));
   const outages = await db.collection("outages").find({}).toArray();
 
   const dbAreas = [...new Set(outages.map(o => o.area.trim()))];

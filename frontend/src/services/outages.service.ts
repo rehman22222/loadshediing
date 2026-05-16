@@ -1,4 +1,5 @@
 import { api } from '@/lib/axios';
+import type { AreaOption } from '@/services/areas.service';
 
 export interface Outage {
   _id: string;
@@ -42,6 +43,20 @@ interface RawOutage {
   note?: string;
 }
 
+interface RawOutageSearchResult {
+  area: AreaOption & {
+    matchScore?: number;
+  };
+  outages: RawOutage[];
+}
+
+export interface OutageSearchResult {
+  area: AreaOption & {
+    matchScore?: number;
+  };
+  outages: Outage[];
+}
+
 function normalizeOutage(outage: RawOutage): Outage {
   return {
     _id: outage._id,
@@ -82,6 +97,17 @@ export const outagesService = {
   getOutagesByCity: async (city: string): Promise<Outage[]> => {
     const response = await api.get(`/outages/city/${encodeURIComponent(city)}`);
     return response.data.map(normalizeOutage);
+  },
+
+  searchByArea: async (search: string): Promise<OutageSearchResult[]> => {
+    const response = await api.get<{ data: RawOutageSearchResult[] }>('/outages/search', {
+      params: { q: search, limit: 6 },
+    });
+
+    return response.data.data.map((result) => ({
+      area: result.area,
+      outages: result.outages.map(normalizeOutage),
+    }));
   },
 
   reportOutage: async (report: OutageReport): Promise<Outage> => {

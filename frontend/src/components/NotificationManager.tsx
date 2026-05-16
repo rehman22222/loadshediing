@@ -31,6 +31,10 @@ export const NotificationManager = () => {
       return undefined;
     }
 
+    if (!user.areaId && !user.area?._id) {
+      return undefined;
+    }
+
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') {
       return undefined;
     }
@@ -38,13 +42,19 @@ export const NotificationManager = () => {
     let cancelled = false;
 
     const scheduleAlerts = async () => {
-      const minutesBefore = user.alertPreferences?.minutesBefore || 15;
-      const upcomingOutages = await outagesService.getUpcomingOutages();
+      let upcomingOutages = [];
+
+      try {
+        upcomingOutages = await outagesService.getUpcomingOutages();
+      } catch {
+        return;
+      }
 
       if (cancelled) {
         return;
       }
 
+      const minutesBefore = user.alertPreferences?.minutesBefore || 15;
       for (const outage of upcomingOutages) {
         const alertTime = new Date(outage.startTime).getTime() - minutesBefore * 60 * 1000;
         const delay = alertTime - Date.now();

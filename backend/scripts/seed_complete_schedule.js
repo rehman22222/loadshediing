@@ -7,6 +7,7 @@ const Outage = require("../models/Outage");
 const Area = require("../models/Area");
 const User = require("../models/User");
 const { forwardGeocode } = require("../services/geocode");
+const { connectMongoose } = require("../utils/dbConnection");
 
 // Complete schedule data from the PDF
 const COMPLETE_SCHEDULE_DATA = `33/E Korangi Town 0935~1105 1305~1435 1605~1735 2235~0005
@@ -232,8 +233,8 @@ async function main() {
 
   console.log(`📅 Processing schedule for date: ${forcedDate}`);
 
-  await mongoose.connect(process.env.MONGO_URI);
-  console.log("✅ Connected to MongoDB");
+  await connectMongoose();
+  console.log(`✅ Connected to MongoDB: ${mongoose.connection.db.databaseName}`);
 
   const systemUser = await ensureSystemUser();
 

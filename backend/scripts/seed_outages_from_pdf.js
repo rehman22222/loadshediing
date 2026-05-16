@@ -8,6 +8,7 @@ const Outage = require("../models/Outage");
 const Area = require("../models/Area");
 const User = require("../models/User");
 const { forwardGeocode } = require("../services/geocode");
+const { connectMongoose } = require("../utils/dbConnection");
 
 async function ensureSystemUser() {
   const email = process.env.SYSTEM_USER_EMAIL || "system@loadshedding.local";
@@ -40,8 +41,8 @@ async function run() {
   }
   const pdfPath = path.resolve(pdfPathRaw);
 
-  await mongoose.connect(process.env.MONGO_URI);
-  console.log("Connected to DB");
+  await connectMongoose();
+  console.log(`Connected to DB: ${mongoose.connection.db.databaseName}`);
 
   const { dateISO, items } = await parseSchedulePdf(pdfPath, forcedDate || null);
   console.log(`Schedule date: ${dateISO}. Parsed ${items.length} items.`);

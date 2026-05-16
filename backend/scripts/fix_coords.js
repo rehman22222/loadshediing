@@ -3,8 +3,9 @@ require("dotenv").config();
 const { MongoClient } = require("mongodb");
 const fetch = require("node-fetch");
 const readline = require("readline");
+const { getMongoDatabaseName } = require("../utils/dbConnection");
 
-const uri = process.env.MONGO_URI;
+const uri = process.env.MONGODB_URI || process.env.MONGO_URI;
 const client = new MongoClient(uri);
 
 const CITY = "Karachi";
@@ -149,7 +150,7 @@ async function geocode(area) {
 
 async function main() {
   await client.connect();
-  const db = client.db();
+  const db = client.db(getMongoDatabaseName(uri));
   const outages = db.collection("outages");
 
   // Find outages with null or [0,0]

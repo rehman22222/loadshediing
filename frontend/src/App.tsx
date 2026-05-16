@@ -1,12 +1,14 @@
 import { Toaster } from '@/components/ui/toaster';
 import { Toaster as Sonner } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster as HotToaster } from 'react-hot-toast';
+import { useEffect } from 'react';
 import { ProtectedRoute } from '@/components/ProtectedRoute';
 import { NotificationManager } from '@/components/NotificationManager';
 import { useAuthStore } from '@/store/authStore';
+import { authService } from '@/services/auth.service';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
@@ -22,9 +24,30 @@ const queryClient = new QueryClient({
     queries: {
       staleTime: 1000 * 60 * 5,
       retry: 1,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: false,
     },
   },
 });
+
+const AuthHydrator = () => {
+  const { isAuthenticated, updateUser } = useAuthStore();
+  const { data } = useQuery({
+    queryKey: ['auth', 'profile'],
+    queryFn: authService.getMe,
+    enabled: isAuthenticated,
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (data) {
+      updateUser(data);
+    }
+  }, [data, updateUser]);
+
+  return null;
+};
 
 const App = () => {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
@@ -46,6 +69,7 @@ const App = () => {
           }}
         />
         <BrowserRouter>
+          <AuthHydrator />
           <NotificationManager />
           <Routes>
             <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
